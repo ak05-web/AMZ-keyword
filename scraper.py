@@ -28,8 +28,10 @@ DOMAIN_MAP = {
 }
 
 
-def get_autocomplete_suggestions(prefix, marketplace="amazon.in", timeout=6):
-    """Fetch raw autocomplete suggestions for a single prefix string."""
+def get_autocomplete_suggestions(prefix, marketplace="amazon.in", timeout=6, debug=False):
+    """Fetch raw autocomplete suggestions for a single prefix string.
+    If debug=True, returns (suggestions, debug_info) instead of just
+    the list — used by the UI to show why a query returned nothing."""
     completion_host = DOMAIN_MAP.get(marketplace, "completion.amazon.in")
     url = f"https://{completion_host}/api/2017/suggestions"
     params = {
@@ -39,14 +41,19 @@ def get_autocomplete_suggestions(prefix, marketplace="amazon.in", timeout=6):
         "site-variant": "desktop",
         "mkt": "44571" if marketplace == "amazon.in" else "1",
     }
+    info = {"url": url, "status": None, "error": None, "raw": None}
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
+        info["status"] = r.status_code
+        info["raw"] = r.text[:300]
         r.raise_for_status()
         data = r.json()
         sugg = data.get("suggestions", [])
-        return [s.get("value", "") for s in sugg if s.get("value")]
-    except Exception:
-        return []
+        result = [s.get("value", "") for s in sugg if s.get("value")]
+        return (result, info) if debug else result
+    except Exception as e:
+        info["error"] = str(e)
+        return ([], info) if debug else []
 
 
 def alphabet_soup_keywords(seed, marketplace="amazon.in", extra_chars=True, progress_cb=None):

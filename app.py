@@ -65,7 +65,27 @@ tabs = st.tabs([
 with tabs[0]:
     st.subheader("Keyword Research (Alphabet Soup Method)")
     seed = st.text_input("Seed keyword (e.g. 'protein powder')", key="seed_kw")
-    run_kw = st.button("Find Keywords", type="primary", key="run_kw")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        run_kw = st.button("Find Keywords", type="primary", key="run_kw")
+    with col_b:
+        test_conn = st.button("🔧 Test Connection (debug)", key="test_conn")
+
+    if test_conn:
+        from scraper import get_autocomplete_suggestions
+        test_seed = seed.strip() or "protein powder"
+        suggestions, info = get_autocomplete_suggestions(test_seed, marketplace=marketplace, debug=True)
+        st.write(f"**URL hit:** `{info['url']}`")
+        st.write(f"**HTTP status:** `{info['status']}`")
+        if info["error"]:
+            st.error(f"Error: {info['error']}")
+        st.write(f"**Suggestions mile:** {len(suggestions)}")
+        if suggestions:
+            st.success(f"Working hai! Sample: {suggestions[:5]}")
+        else:
+            st.warning("Kuch nahi mila — neeche raw response dekho.")
+        with st.expander("Raw response (first 300 chars)"):
+            st.code(info["raw"] or "(empty)")
 
     if run_kw and seed.strip():
         progress = st.progress(0.0, text="Autocomplete queries chal rahi hain...")

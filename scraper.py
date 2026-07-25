@@ -13,6 +13,7 @@ import time
 import string
 import requests
 from bs4 import BeautifulSoup
+import api_providers
 
 HEADERS = {
     "User-Agent": (
@@ -113,18 +114,23 @@ def alphabet_soup_keywords(seed, marketplace="amazon.in", extra_chars=True, prog
 
 def scrape_search_results(keyword, marketplace="amazon.in", max_results=20, timeout=8):
     """
-    Scrape Amazon's search results page for a keyword — this is the
-    'Cerebro-style' competition view: who's ranking, sponsored vs
-    organic, price/rating/review spread. Used to gauge how hard a
-    keyword is to break into page 1 for.
+    Get Amazon search results for a keyword — tries RapidAPI providers
+    first (reliable on cloud hosting), falls back to raw scraping of
+    www.amazon.in/s only if no RapidAPI key is set or all providers fail.
     """
+    api_results, provider_used, api_error = api_providers.api_search(keyword, marketplace)
+    if api_results:
+        return {"error": None, "results": api_results[:max_results], "source": provider_used}
+
+    # Fallback: raw scrape (works locally, often blocked on cloud IPs)
     url = f"https://www.{marketplace}/s"
     params = {"k": keyword}
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
         r.raise_for_status()
     except Exception as e:
-        return {"error": f"Search page fetch fail hua: {e}", "results": []}
+        note = f" (RapidAPI bhi fail hua: {api_error})" if api_error else ""
+        return {"error": f"Search page fetch fail hua: {e}{note}", "results": []}
 
     soup = BeautifulSoup(r.text, "lxml")
     cards = soup.select("div[data-component-type='s-search-result']")
@@ -168,7 +174,7 @@ def scrape_search_results(keyword, marketplace="amazon.in", max_results=20, time
             "results": [],
         }
 
-    return {"error": None, "results": results}
+    return {"error": None, "results": results, "source": "raw scrape (fallback)"}
 
 
 def competition_score(search_result):
@@ -333,19 +339,26 @@ def extract_asin(text):
 
 def scrape_product_listing(asin_or_url, marketplace="amazon.in", timeout=8):
     """
-    Scrape a single product page for title, bullets, price, rating,
-    review count -- used for competitor analysis / keyword extraction.
+    Get a single product's listing data — tries RapidAPI providers
+    first (reliable on cloud hosting), falls back to raw page scraping
+    only if no RapidAPI key is set or all providers fail.
     """
     asin = extract_asin(asin_or_url)
     if not asin:
         return {"error": "Valid ASIN ya product URL nahi mila."}
+
+    api_data, provider_used, api_error = api_providers.api_product_details(asin, marketplace)
+    if api_data:
+        api_data["source"] = provider_used
+        return api_data
 
     url = f"https://www.{marketplace}/dp/{asin}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=timeout)
         r.raise_for_status()
     except Exception as e:
-        return {"error": f"Page fetch fail hua: {e}"}
+        note = f" (RapidAPI bhi fail hua: {api_error})" if api_error else ""
+        return {"error": f"Page fetch fail hua: {e}{note}"}
 
     soup = BeautifulSoup(r.text, "lxml")
 
@@ -411,5 +424,6 @@ def scrape_product_listing(asin_or_url, marketplace="amazon.in", timeout=8):
         "image_count": image_count,
         "has_aplus": has_aplus,
         "description": description,
+        "source": "raw scrape (fallback)",
         "error": None,
     }

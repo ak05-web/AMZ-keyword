@@ -64,6 +64,12 @@ tabs = st.tabs([
 # ---------------------------------------------------------------
 with tabs[0]:
     st.subheader("Keyword Research (Alphabet Soup Method)")
+    st.caption(
+        "⚠️ Ye tab abhi bhi Amazon ke autocomplete endpoint ko direct hit karta hai — "
+        "RapidAPI providers is data ke liye configure nahi hain. Cloud pe fail ho toh "
+        "isko apne local machine pe chalao (client ke account se separate rakh ke, "
+        "sirf keyword research ke liye)."
+    )
     seed = st.text_input("Seed keyword (e.g. 'protein powder')", key="seed_kw")
     col_a, col_b = st.columns([1, 1])
     with col_a:
@@ -137,6 +143,7 @@ with tabs[1]:
         if sr.get("error") and not sr["results"]:
             st.error(sr["error"])
         else:
+            st.caption(f"Data source: {sr.get('source', 'unknown')}")
             score = competition_score(sr)
             df = pd.DataFrame(sr["results"])
 
@@ -174,6 +181,7 @@ with tabs[2]:
             st.error(data["error"])
         else:
             history.save_competitor_run(data)
+            st.caption(f"Data source: {data.get('source', 'unknown')}")
             st.markdown(f"### {data['title'] or '(title not found)'}")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Price", data["price"] or "—")

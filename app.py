@@ -63,14 +63,20 @@ tabs = st.tabs([
 # TAB 1: Keyword Research
 # ---------------------------------------------------------------
 with tabs[0]:
-    st.subheader("Keyword Research (Alphabet Soup Method)")
+    st.subheader("Keyword Research")
     st.caption(
-        "⚠️ Ye tab abhi bhi Amazon ke autocomplete endpoint ko direct hit karta hai — "
-        "RapidAPI providers is data ke liye configure nahi hain. Cloud pe fail ho toh "
-        "isko apne local machine pe chalao (client ke account se separate rakh ke, "
-        "sirf keyword research ke liye)."
+        "Default method ab RapidAPI se hi chalta hai (title-mining se real buyer-language "
+        "phrases nikalta hai — quota-friendly, sirf ~7 API calls per search). Agar RapidAPI "
+        "key set nahi hai, ya raw autocomplete chahiye (zyada granular, but cloud pe fail ho "
+        "sakta hai), toggle se switch kar sakte ho."
     )
     seed = st.text_input("Seed keyword (e.g. 'protein powder')", key="seed_kw")
+    method_choice = st.radio(
+        "Method",
+        ["RapidAPI title-mining (recommended for cloud)", "Raw autocomplete scrape (local only)"],
+        horizontal=True,
+        key="kw_method",
+    )
     col_a, col_b = st.columns([1, 1])
     with col_a:
         run_kw = st.button("Find Keywords", type="primary", key="run_kw")
@@ -94,20 +100,21 @@ with tabs[0]:
             st.code(info["raw"] or "(empty)")
 
     if run_kw and seed.strip():
-        progress = st.progress(0.0, text="Autocomplete queries chal rahi hain...")
+        prefer_api = method_choice.startswith("RapidAPI")
+        progress = st.progress(0.0, text="Queries chal rahi hain...")
 
         def cb(frac):
-            progress.progress(min(frac, 1.0), text=f"Autocomplete queries chal rahi hain... {int(frac*100)}%")
+            progress.progress(min(frac, 1.0), text=f"Queries chal rahi hain... {int(frac*100)}%")
 
-        rows = alphabet_soup_keywords(seed.strip(), marketplace=marketplace, progress_cb=cb)
+        rows, method_used = alphabet_soup_keywords(seed.strip(), marketplace=marketplace, progress_cb=cb, prefer_api=prefer_api)
         progress.empty()
 
         if not rows:
-            st.warning("Koi suggestions nahi mile. Seed keyword change karke try karo.")
+            st.warning("Koi keywords nahi mile. Seed keyword change karke try karo, ya method switch karo.")
         else:
             df = pd.DataFrame(rows)
             history.save_keyword_run(seed.strip(), rows)
-            st.success(f"{len(df)} unique keyword phrases mile — history me bhi save ho gaya.")
+            st.success(f"{len(df)} unique keyword phrases mile ({method_used}) — history me bhi save ho gaya.")
 
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Keywords", len(df))

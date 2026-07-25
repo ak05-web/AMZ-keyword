@@ -57,13 +57,24 @@ def get_autocomplete_suggestions(prefix, marketplace="amazon.in", timeout=6, deb
         return ([], info) if debug else []
 
 
-def alphabet_soup_keywords(seed, marketplace="amazon.in", extra_chars=True, progress_cb=None):
+def alphabet_soup_keywords(seed, marketplace="amazon.in", extra_chars=True, progress_cb=None, prefer_api=True):
     """
-    Classic 'alphabet soup' method: query seed+" "+letter for a-z (and
-    optionally 0-9), collect every unique suggestion, and score by how
-    often + how early each phrase appears across all the queries.
-    Returns a list of dicts: keyword, hits, best_rank, score
+    Keyword research. Two methods, tried in order:
+    1. RapidAPI title-mining (api_providers.mine_keywords_from_titles) —
+       works reliably on cloud hosting, uses only a handful of API calls.
+    2. Raw autocomplete alphabet-soup scraping — the original method,
+       often blocked on cloud IPs, but the only one giving true
+       autocomplete-style suggestions. Falls back to this only if
+       prefer_api=False, no RapidAPI key is set, or the API method fails.
+    Returns (rows, method_used) where method_used is a short label for
+    the UI to display.
     """
+    if prefer_api:
+        api_rows, api_error = api_providers.mine_keywords_from_titles(seed, marketplace, progress_cb=progress_cb)
+        if api_rows:
+            return api_rows, "RapidAPI title-mining"
+        # fall through to raw scraping below if API method gave nothing
+
     chars = list(string.ascii_lowercase)
     if extra_chars:
         chars += list(string.digits)
@@ -109,7 +120,7 @@ def alphabet_soup_keywords(seed, marketplace="amazon.in", extra_chars=True, prog
         })
 
     rows.sort(key=lambda x: x["opportunity_score"], reverse=True)
-    return rows
+    return rows, "raw autocomplete scrape (fallback)"
 
 
 def scrape_search_results(keyword, marketplace="amazon.in", max_results=20, timeout=8):

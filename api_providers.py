@@ -251,3 +251,102 @@ def api_product_details(asin, marketplace="amazon.in"):
             last_error = f"{name}: {e}"
             continue
     return None, None, last_error
+
+
+# ---------------------------------------------------------------
+# Keyword mining via search results (RapidAPI-only keyword research)
+# ---------------------------------------------------------------
+import re as _re
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "your", "this", "that", "from", "are",
+    "you", "our", "can", "not", "all", "has", "will", "made", "size",
+    "pack", "set", "new", "amp", "inch", "inches", "pcs", "piece",
+}
+
+# Kept small on purpose: each entry here = 1 extra API call against
+# your monthly quota. seed alone is always queried first for free.
+DEFAULT_MODIFIERS = [
+    "best {seed}",
+    "{seed} for men",
+    "{seed} for women",
+    "{seed} gift",
+    "cheap {seed}",
+    "{seed} pack",
+]
+
+
+def mine_keywords_from_titles(seed, marketplace="amazon.in", modifiers=None, progress_cb=None):
+    """
+    RapidAPI-only keyword research substitute: queries the /search
+    endpoint for the seed + a handful of common modifiers, then mines
+    2-4 word phrases out of the real product titles returned. This is
+    NOT the same as true autocomplete suggestions (Amazon doesn't
+    expose that via any current RapidAPI provider), but it surfaces
+    real buyer-facing language actually used in listings for this
+    niche — works entirely through RapidAPI, so no cloud-IP blocking.
+
+    Returns (rows, error). rows is [] with an error message if the
+    key is missing or every query failed.
+    """
+    key = _get_rapidapi_key()
+    if not key:
+        return [], "rapidapi_key secret set nahi hai — is method ke liye RapidAPI key zaroori hai."
+
+    modifiers = modifiers if modifiers is not None else DEFAULT_MODIFIERS
+    queries = [seed] + [m.format(seed=seed) for m in modifiers]
+
+    all_titles = []
+    any_success = False
+    last_error = None
+    total = len(queries)
+
+    for i, q in enumerate(queries, start=1):
+        try:
+            results = None
+            for name, fn in SEARCH_PROVIDERS:
+                try:
+                    results = fn(q, marketplace, key)
+                    if results:
+                        break
+                except Exception as e:
+                    last_error = f"{name}: {e}"
+                    continue
+            if results:
+                any_success = True
+                all_titles.extend([r["title"] for r in results if r.get("title")])
+        except Exception as e:
+            last_error = str(e)
+        if progress_cb:
+            progress_cb(i / total)
+
+    if not any_success:
+        return [], last_error or "Koi query successful nahi hui."
+
+    # n-gram mining (2 to 4 word phrases) across all collected titles
+    phrase_hits = {}   # phrase -> count of titles it appeared in
+    for title in all_titles:
+        words = _re.findall(r"[a-zA-Z0-9]+", title.lower())
+        words = [w for w in words if w not in _STOPWORDS and len(w) > 1]
+        seen_in_this_title = set()
+        for n in (2, 3, 4):
+            for j in range(len(words) - n + 1):
+                phrase = " ".join(words[j:j + n])
+                if phrase in seen_in_this_title:
+                    continue
+                seen_in_this_title.add(phrase)
+                phrase_hits[phrase] = phrase_hits.get(phrase, 0) + 1
+
+    rows = []
+    for phrase, hits in phrase_hits.items():
+        if hits < 2:  # drop one-off noise
+            continue
+        rows.append({
+            "keyword": phrase,
+            "word_count": len(phrase.split()),
+            "hits": hits,
+            "best_autocomplete_rank": 1,  # not applicable for this method
+            "opportunity_score": round(hits * 10, 1),
+        })
+    rows.sort(key=lambda x: x["opportunity_score"], reverse=True)
+    return rows[:150], None
